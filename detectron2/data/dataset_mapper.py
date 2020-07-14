@@ -82,8 +82,9 @@ class DatasetMapper:
         logger.info("Augmentations used in training: " + str(augmentations))
 
     @classmethod
-    def from_config(cls, cfg, is_train: bool = True):
-        augs = utils.build_augmentation(cfg, is_train)
+    def from_config(cls, cfg, is_train: bool = True,augs=None):
+        if augs is None:
+            augs = utils.build_augmentation(cfg, is_train)
         if cfg.INPUT.CROP.ENABLED and is_train:
             augs.insert(0, T.RandomCrop(cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE))
             recompute_boxes = cfg.MODEL.MASK_ON
