@@ -10,7 +10,7 @@ ROIPredictor:
 from detectron2.utils.registry import Registry
 from detectron2.modeling.roi_heads import FastRCNNOutputLayers
 
-__all__ = ['build_roi_predictor','StandardFastRCNNOutputLayers']
+__all__ = ['build_roi_predictor','StandardFastRCNNOutputLayers','ROI_PREDICTORS_REGISTRY']
 ROI_PREDICTORS_REGISTRY = Registry("ROI_PREDICTORS")
 ROI_PREDICTORS_REGISTRY.__doc__ = """ """
 

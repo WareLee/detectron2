@@ -1,41 +1,14 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-import inspect
 import logging
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
-import torch
-from torch import nn
+from detectron2.layers import ShapeSpec
 
-from detectron2.config import configurable
-from detectron2.layers import ShapeSpec, nonzero_tuple
-from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
-from detectron2.utils.events import get_event_storage
-from detectron2.utils.registry import Registry
-
-from detectron2.modeling.backbone.resnet import BottleneckBlock, make_stage
-from detectron2.modeling.matcher import Matcher
 from detectron2.modeling.poolers import ROIPooler
-from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
-from detectron2.modeling.sampling import subsample_labels
-from detectron2.modeling.roi_heads import build_box_head
-from detectron2.modeling.roi_heads import FastRCNNOutputLayers
-from detectron2.modeling.roi_heads import build_keypoint_head
-from detectron2.modeling.roi_heads import build_mask_head
-from detectron2.modeling.roi_heads import Res5ROIHeads
+from detectron2.modeling.roi_heads import build_mask_head, Res5ROIHeads
+from detectron2.modeling import ROI_HEADS_REGISTRY
 
 from .roi_predictors import build_roi_predictor
 
-__all__=['Res5ROIHeads2']
-
-ROI_HEADS_REGISTRY = Registry("ROI_HEADS")
-ROI_HEADS_REGISTRY.__doc__ = """
-Registry for ROI heads in a generalized R-CNN model.
-ROIHeads take feature maps and region proposals, and
-perform per-region computation.
-
-The registered object will be called with `obj(cfg, input_shape)`.
-The call is expected to return an :class:`ROIHeads`.
-"""
+__all__ = ['Res5ROIHeads2']
 
 logger = logging.getLogger(__name__)
 
