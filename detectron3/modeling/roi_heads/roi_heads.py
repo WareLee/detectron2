@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 @ROI_HEADS_REGISTRY.register()
 class Res5ROIHeads2(Res5ROIHeads):
     def __init__(self, cfg, input_shape):
-        super().__init__(cfg)
+        super().__init__(cfg,input_shape)
 
         # fmt: off
         self.in_features = cfg.MODEL.ROI_HEADS.IN_FEATURES
