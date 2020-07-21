@@ -56,7 +56,7 @@ class MLabelsInfer():
                 img = images[i]
             height, width = img.shape[:2]
             img = self.aug.get_transform(img).apply_image(img)
-            img = torch.as_tensor(img.astype(np.float32).transpose(2, 0, 1))/255.
+            img = torch.as_tensor(img.astype(np.float32).transpose(2, 0, 1))
             inputs.append({'image': img, 'height': height, 'width': width})
 
         with torch.no_grad():
@@ -118,10 +118,10 @@ def main(args):
     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.4
     cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[64, 128, 256, 512, 704]]
     cfg.MODEL.RPN.IOU_THRESHOLDS = [0.3, 0.8]
-    cfg.MODEL.PIXEL_MEAN = [0.15676956, 0.16244236, 0.16733762]
-    cfg.MODEL.PIXEL_STD = [0.17134029, 0.17603996, 0.18256618]
-    # cfg.MODEL.PIXEL_MEAN = [44.52619347, 43.15665151, 42.63251777]
-    # cfg.MODEL.PIXEL_STD = [47.42477607, 46.13824758, 45.65620214]
+    # cfg.MODEL.PIXEL_MEAN = [0.15676956, 0.16244236, 0.16733762]
+    # cfg.MODEL.PIXEL_STD = [0.17134029, 0.17603996, 0.18256618]
+    cfg.MODEL.PIXEL_MEAN = [44.52619347, 43.15665151, 42.63251777]
+    cfg.MODEL.PIXEL_STD = [47.42477607, 46.13824758, 45.65620214]
     # -----------------------
     cfg.OUTPUT_DIR = './logs'
     cfg.MODEL.WEIGHTS = '/home/ultrasonic/detectron22/projects/StdPlanesSelection_TridentNet/logs/model_0005099.pth'

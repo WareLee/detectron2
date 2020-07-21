@@ -102,13 +102,16 @@ def main(args):
     # -----------------------
     cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[64, 128, 256, 512,704]]
     cfg.MODEL.RPN.IOU_THRESHOLDS = [0.3, 0.8]
-    cfg.MODEL.PIXEL_MEAN = [0.15676956, 0.16244236, 0.16733762]
-    cfg.MODEL.PIXEL_STD = [0.17134029, 0.17603996, 0.18256618]
-    # cfg.MODEL.PIXEL_MEAN = [44.52619347,43.15665151,42.63251777]
-    # cfg.MODEL.PIXEL_STD = [47.42477607,46.13824758,45.65620214]
+    # cfg.MODEL.PIXEL_MEAN = [0.15676956, 0.16244236, 0.16733762]
+    # cfg.MODEL.PIXEL_STD = [0.17134029, 0.17603996, 0.18256618]
+    cfg.MODEL.PIXEL_MEAN = [44.52619347,43.15665151,42.63251777]
+    cfg.MODEL.PIXEL_STD = [47.42477607,46.13824758,45.65620214]
+    # means [0.17461253 0.16924178 0.16718635]
+    # stdevs [0.18597952 0.18093431 0.17904393]
     # -----------------------
     cfg.OUTPUT_DIR = './logs'
-    cfg.MODEL.WEIGHTS = '/home/ultrasonic/detectron22/projects/StdPlanesSelection_TridentNet/logs/model_0005099.pth'
+    # cfg.MODEL.WEIGHTS = '/home/ultrasonic/detectron22/projects/StdPlanesSelection_TridentNet/logs/model_0005099.pth'
+    cfg.MODEL.WEIGHTS = ''
     cfg.SOLVER.IMS_PER_BATCH = 6
     cfg.SOLVER.BASE_LR = 0.001
     ITERS_IN_ONE_EPOCH = 38267 // cfg.SOLVER.IMS_PER_BATCH
@@ -123,7 +126,7 @@ def main(args):
     cfg.DATASETS.TEST = ('kuangtu6_test',)
     print(cfg)
     trainer = MlabelsTrainer(cfg)
-    trainer.resume_or_load(resume=False)
+    # trainer.resume_or_load(resume=False)
     if args.eval_only == 1:
         evaluators = []
         trainer.test(cfg, trainer.model, evaluators=evaluators)
