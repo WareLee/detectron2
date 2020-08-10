@@ -113,10 +113,13 @@ def main(args):
     cfg.MODEL.ROI_HEADS.STD_CATEGORY_NUM = 2
     cfg.MODEL.ROI_HEADS.STD_CLS_LOSS_TYPE = 'softmax'  # arc,softmax,arc+softmax
     cfg.MODEL.ROI_HEADS.STD_CLS_ARC_SOFTMAX_LOSS_WEIGHTS = (0.8, 0.2)
+    cfg.MODEL.ROI_HEADS.FINE_BONE_NAME = 'PoolFc'  # 细分类分支网络 PoolFc or SE33PoolFc
+    cfg.MODEL.ROI_HEADS.FINE_BONE_EMB_DIM = 512
     # -----------------------
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.3
     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.4
-    cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[64, 128, 256, 512, 704]]
+    # cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[64, 128, 256, 512, 704]]
+    cfg.MODEL.ANCHOR_GENERATOR.SIZES = [[208, 240, 448, 560, 672]]
     cfg.MODEL.RPN.IOU_THRESHOLDS = [0.3, 0.8]
     # cfg.MODEL.PIXEL_MEAN = [0.15676956, 0.16244236, 0.16733762]
     # cfg.MODEL.PIXEL_STD = [0.17134029, 0.17603996, 0.18256618]
@@ -124,7 +127,7 @@ def main(args):
     cfg.MODEL.PIXEL_STD = [47.42477607, 46.13824758, 45.65620214]
     # -----------------------
     cfg.OUTPUT_DIR = './logs'
-    cfg.MODEL.WEIGHTS = '/home/ultrasonic/detectron22/projects/StdPlanesSelection_TridentNet/logs/model_0005099.pth'
+    cfg.MODEL.WEIGHTS = '/home/ultrasonic/detectron22/projects/StdPlanesSelection_TridentNet/logs/model_0008924.pth'
     cfg.SOLVER.IMS_PER_BATCH = 4
     cfg.SOLVER.BASE_LR = 0.001
     ITERS_IN_ONE_EPOCH = 38267 // cfg.SOLVER.IMS_PER_BATCH

@@ -31,6 +31,30 @@ from detectron3.modeling.roi_heads import ROI_PREDICTORS_REGISTRY
 __all__ = ['TripleBranchOutputLayer']
 
 
+class Flatten(nn.Module):
+    def forward(self, x):
+        return x.view(x.size(0), -1)
+
+
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        # return x * y.expand_as(x)
+        return x * y
+
+
 class TripleBranchOutput(object):
     # 仅仅用于组织 Predictor 的损失和记录准确率到日志
     def __init__(self,
@@ -83,10 +107,12 @@ class TripleBranchOutput(object):
         self._no_instances = len(proposals) == 0  # no instances found
 
     def standard_cls_loss(self):
-        # 标准分类分支不考虑bg
+        # 标准分类分支不考虑bg。 gt_standards中设置为-1的均表示为非目标
         loss_dict = {}
-        bg_class_ind = self.pred_class_logits.shape[1] - 1
-        fg_inds = (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind)
+        # loss_dict['standard_cls_softmax_loss'] = 0.0 * self.pred_standard_cls_softmax_logits.sum()
+        # bg_class_ind = self.pred_class_logits.shape[1] - 1
+        # fg_inds = (self.gt_classes >= 0) & (self.gt_classes < bg_class_ind)
+        fg_inds = (self.gt_standards>=0)
         if self._no_instances or torch.nonzero(fg_inds).numel() == 0:
             if self.pred_standard_cls_arc_logits is not None:
                 loss_dict['standard_cls_arc_loss'] = 0.0 * self.pred_standard_cls_arc_logits.sum()
@@ -112,7 +138,7 @@ class TripleBranchOutput(object):
     def losses(self):
         loss_dict = {}
         # 大分类
-        loss_dict['cls_loss'] = self.category_cls_loss()
+        loss_dict['cls_loss'] = self.category_cls_loss()*2.0
 
         # 标准分类
         std_cls_loss_dict = self.standard_cls_loss()
@@ -234,22 +260,71 @@ class TripleBranchOutput(object):
 @ROI_PREDICTORS_REGISTRY.register()
 class TripleBranchOutputLayer(FastRCNNOutputLayers):
     @configurable
-    def __init__(self, input_shape, std_category_num, std_cls_loss_type, arc_softmax_loss_weights, **kwargs):
-        super(TripleBranchOutputLayer, self).__init__(input_shape, **kwargs)
+    def __init__(self, input_shape, fine_bone_name,fine_bone_emb_dim, std_category_num, std_cls_loss_type, arc_softmax_loss_weights,
+                 **kwargs):
+        super(TripleBranchOutputLayer, self).__init__(ShapeSpec(channels=input_shape.channels, width=1, height=1),
+                                                      **kwargs)
         self.std_category_num = std_category_num
         self.std_cls_loss_type = std_cls_loss_type
         self.arc_softmax_loss_weights = arc_softmax_loss_weights
 
-        input_size = input_shape.channels * (input_shape.width or 1) * (input_shape.height or 1)
+        self.input_channels = input_shape.channels
 
         # 新增加的第三个分类分支： 预测是否标准
         # @Will Lee, 标准预测部分不考虑bg,因为大分类分支已经做了这个工作
-        self.standard_cls_score = Linear(input_size, self.std_category_num)
+        self.fine_bone = self.build_fine_bone(fine_bone_name,emb_dim=fine_bone_emb_dim)
+        self.standard_cls_score = Linear(fine_bone_emb_dim, self.std_category_num)
+        for name, param in self.fine_bone.named_parameters():
+            if 'weight' in name:
+                nn.init.normal_(param, std=0.01)
+            if 'bias' in name:
+                nn.init.constant_(param, 0)
         nn.init.normal_(self.standard_cls_score.weight, std=0.01)
         nn.init.constant_(self.standard_cls_score.bias, 0)
 
+    def build_fine_bone(self, fine_bone_name, emb_dim=512):
+        if fine_bone_name == 'PoolFc':
+            cls_bone = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),  # 2048*7*7 --> 2048x1x1
+                Flatten(),
+                nn.Linear(self.input_channels, emb_dim),
+                nn.BatchNorm1d(emb_dim)
+            )
+        elif fine_bone_name == 'SE33PoolFc':
+            # feature_dim = kwargs.get('feature_dim')
+            # reduction = kwargs.get('reduction')
+            # input_shape = kwargs.get('input_shape')
+            cls_bone = nn.Sequential(
+                # SE 模块
+                SELayer(self.input_channels, reduction=16),
+
+                # 3x3 Conv: 2048x7x7 --> 2048x5x5
+                nn.Conv2d(self.input_channels, self.input_channels, (3, 3), stride=1, padding=0),
+                nn.BatchNorm2d(self.input_channels),
+                nn.ReLU(inplace=True),
+                # 3x3 Conv: 2048x5x5 --> 2048x3x3
+                nn.Conv2d(self.input_channels, self.input_channels, (3, 3), padding=0, stride=1),
+                nn.BatchNorm2d(self.input_channels),
+                nn.ReLU(inplace=True),
+
+                # MaxPool降低分辨率: 2048x3x3 --> 2048x1x1
+                nn.AdaptiveAvgPool2d(1),
+
+                # fc: embedding
+                Flatten(),
+                nn.Linear(self.input_channels, emb_dim),
+                nn.BatchNorm1d(emb_dim)
+            )
+
+        else:
+            raise Exception('细分类网络类型只支持2种模式:{PoolFc,SE33PoolFc}')
+
+        return cls_bone
+
     @classmethod
     def from_config(cls, cfg, input_shape):
+        fine_bone_name = cfg.MODEL.ROI_HEADS.FINE_BONE_NAME  # 细分类分支网络PoolFc or SE33PoolFc
+        fine_bone_emb_dim = cfg.MODEL.ROI_HEADS.FINE_BONE_EMB_DIM  # 特征嵌入维度
         std_category_num = cfg.MODEL.ROI_HEADS.STD_CATEGORY_NUM
         std_cls_loss_type = cfg.MODEL.ROI_HEADS.STD_CLS_LOSS_TYPE
         arc_softmax_loss_weights = cfg.MODEL.ROI_HEADS.STD_CLS_ARC_SOFTMAX_LOSS_WEIGHTS
@@ -257,6 +332,8 @@ class TripleBranchOutputLayer(FastRCNNOutputLayers):
         kwargs = FastRCNNOutputLayers.from_config(cfg, input_shape)
         return {
             'input_shape': input_shape,
+            'fine_bone_name': fine_bone_name,
+            'fine_bone_emb_dim': fine_bone_emb_dim,
             'std_category_num': std_category_num,
             'std_cls_loss_type': std_cls_loss_type,
             'arc_softmax_loss_weights': arc_softmax_loss_weights,
@@ -264,11 +341,14 @@ class TripleBranchOutputLayer(FastRCNNOutputLayers):
         }
 
     def forward(self, x):
-        if x.dim() > 2:
-            x = torch.flatten(x, start_dim=1)
-        cls_logits = self.cls_score(x)
-        proposal_deltas = self.bbox_pred(x)
+        # x , [?,2048,7,7]
+        vector = torch.mean(x, dim=[2, 3])
+        if vector.dim() > 2:
+            vector = torch.flatten(vector, start_dim=1)
+        cls_logits = self.cls_score(vector)
+        proposal_deltas = self.bbox_pred(vector)
         # TODO 补充
+        x = self.fine_bone(x)
         if self.std_cls_loss_type == 'softmax':
             standard_cls_logits = self.standard_cls_score(x)
             predictions = (cls_logits, standard_cls_logits, proposal_deltas)

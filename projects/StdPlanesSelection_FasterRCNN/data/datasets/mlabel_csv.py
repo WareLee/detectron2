@@ -7,7 +7,7 @@ import os
 from detectron2.structures.boxes import BoxMode
 
 category2id = {'丘脑': 0, '腹部': 1, '股骨': 2, '脊柱': 3, '小脑水平横切面': 4, '四腔心切面': 5}
-standard2id = {'非标准': 0, '标准': 1}
+standard2id = {'非标准': 0, '标准': 1, 'ignore': 2}
 image_root = r'/home/ultrasonic/hnumedical/SourceCode/StdPlane-2/CenterNet-master/data/Muti_Planes_Det/images'
 
 
@@ -35,11 +35,24 @@ def line2dict_func(line, image_id):
     annotations = []
     for i in range(0, len(items), 6):
         bbox = [float(it) for it in items[i:i + 4]]
+        # bbox超界矫正
+        bbox = [max(0, it) for it in bbox]  # 去除负数
+        bbox[0] = min(width - 1, bbox[0])  # 宽度超界矫正
+        bbox[2] = min(width - 1, bbox[2])
+        bbox[1] = min(height - 1, bbox[1])  # 高度超界矫正
+        bbox[3] = min(height - 1, bbox[3])
+        # 去除不合规的框（XYXY）
+        if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+            continue
+
         category_id = category2id[items[i + 4]]
         standard_id = standard2id[items[i + 5]]
         dic = {'bbox': bbox, 'category_id': category_id, 'standard_id': standard_id, 'iscrowd': 0,
                'bbox_mode': BoxMode.XYXY_ABS}
         annotations.append(dic)
+
+    if len(annotations) == 0:
+        return None
 
     return {'file_name': file_name, 'width': width, 'height': height, 'image_id': image_id,
             'annotations': annotations}
@@ -54,5 +67,6 @@ def load_csv(csv_path, line2dict_func=line2dict_func, comment=True):
             lines = lines[1:]
     for image_id, line in enumerate(lines):
         per_img_dic = line2dict_func(line, image_id)
-        dicts.append(per_img_dic)
+        if per_img_dic is not None:
+            dicts.append(per_img_dic)
     return dicts

@@ -1,0 +1,44 @@
+_BASE_: "/home/ultrasonic/detectron22/configs/Base-RCNN-FPN.yaml"
+INPUT:
+  MIN_SIZE_TEST: 800
+  MAX_SIZE_TEST: 960
+  MAX_SIZE_TRAIN: 960
+  MIN_SIZE_TRAIN: (800,)  # 是否要太小了，要不要改成960x(736,800)
+  MIN_SIZE_TRAIN_SAMPLING: "choice"  # @WillLee 固定使用choice，以固定输入大小
+DATASETS:
+  TRAIN: ('kuangtu6_train',)
+  TEST: ('kuangtu6_test',)
+MODEL:
+  PIXEL_MEAN: [44.52619347, 43.15665151, 42.63251777]
+  PIXEL_STD: [47.42477607, 46.13824758, 45.65620214]
+  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  MASK_ON: False
+  RESNETS:
+    DEPTH: 50
+  ANCHOR_GENERATOR:
+    SIZES: [[208, 240, 448, 560, 672]]
+  RPN:
+    IOU_THRESHOLDS: [0.3, 0.7]
+  ROI_HEADS:
+    NAME: "TripleStandardROIHeads"
+    NUM_CLASSES: 6
+    IN_FEATURES: ["p2", "p3", "p4", "p5"]
+    CATEGORY_LOSS_TYPE: 'cross_entropy'  # softmax or arc or arc+softmax（和STD_CLS_LOSS_TYPE共用一套参数）,均固定使用focal loss
+    BATCH_SIZE_PER_IMAGE: 128
+    # -----------------------------
+    PREDICTOR: 'MlabelStandardFastRCNNOutputLayer'
+    STD_NUM_CLS: 2
+    STD_CLS_LOSS_TYPE: 'arc+softmax'   # softmax or arc or arc+softmax
+    STD_ARC_LOSS_S: 20
+    STD_ARC_LOSS_M: 0.174 # 5度==0.087,10度==0.174,15度==0.2618,30度==0.5236
+    STD_ARC_LOSS_EASY_MARGIN: False
+    STD_CLS_BRANCH_NAME: '2fc'  # 2fc or DWSE or 133ConvSE
+    STD_CLS_EMB_DIM: 512
+    REDUCTION: 8  # for SELayer
+    # ++++++++++++++++++++++++++++++
+SOLVER:
+  BASE_LR: 0.001
+  STEPS: (210000, 250000)
+  MAX_ITER: 270000
+  IMS_PER_BATCH: 16
+  CHECKPOINT_PERIOD: 20000

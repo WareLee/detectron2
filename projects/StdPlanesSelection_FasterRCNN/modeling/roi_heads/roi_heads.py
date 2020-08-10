@@ -1,89 +1,76 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-import torch
-from typing import Dict, List, Optional, Tuple, Union
-from detectron2.layers import batched_nms
-from detectron2.modeling import ROI_HEADS_REGISTRY, StandardROIHeads
-from detectron2.structures import Instances
-from detectron3.modeling.roi_heads.roi_heads import Res5ROIHeads2
-from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
-from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
+from typing import List, Tuple, Dict, Union
 import numpy as np
+import torch
+from detectron2.layers import cat
+from detectron2.structures import Instances, Boxes
+from detectron2.modeling.roi_heads import ROI_HEADS_REGISTRY
+from detectron2.modeling.roi_heads.roi_heads import add_ground_truth_to_proposals, pairwise_iou
 from detectron2.utils.events import get_event_storage
 from detectron2.modeling.sampling import subsample_labels
+from detectron2.config import configurable
+from detectron3.modeling.roi_heads import StandardROIHeads2
 
-
-def merge_branch_instances(instances, num_branch, nms_thresh, topk_per_image):
-    """
-    Merge detection results from different branches of TridentNet.
-    Return detection results by applying non-maximum suppression (NMS) on bounding boxes
-    and keep the unsuppressed boxes and other instances (e.g mask) if any.
-
-    Args:
-        instances (list[Instances]): A list of N * num_branch instances that store detection
-            results. Contain N images and each image has num_branch instances.
-        num_branch (int): Number of branches used for merging detection results for each image.
-        nms_thresh (float):  The threshold to use for box non-maximum suppression. Value in [0, 1].
-        topk_per_image (int): The number of top scoring detections to return. Set < 0 to return
-            all detections.
-
-    Returns:
-        results: (list[Instances]): A list of N instances, one for each image in the batch,
-            that stores the topk most confidence detections after merging results from multiple
-            branches.
-    """
-    if num_branch == 1:
-        return instances
-
-    batch_size = len(instances) // num_branch
-    results = []
-    for i in range(batch_size):
-        instance = Instances.cat([instances[i + batch_size * j] for j in range(num_branch)])
-
-        # Apply per-class NMS
-        keep = batched_nms(
-            instance.pred_boxes.tensor, instance.scores, instance.pred_classes, nms_thresh
-        )
-        keep = keep[:topk_per_image]
-        result = instance[keep]
-
-        results.append(result)
-
-    return results
+__all__ = ['TripleStandardROIHeads']
 
 
 @ROI_HEADS_REGISTRY.register()
-class TridentRes5ROITripleHeads(Res5ROIHeads2):
-    """
-    The TridentNet ROIHeads in a typical "C4" R-CNN model.
-    See :class:`Res5ROIHeads`.
-    """
+class TripleStandardROIHeads(StandardROIHeads2):
+    @configurable
+    def __init__(self, std_num_classes, **kwargs):
+        self.std_num_classes = std_num_classes
+        super(TripleStandardROIHeads, self).__init__(**kwargs)
 
-    def __init__(self, cfg, input_shape):
-        super().__init__(cfg, input_shape)
-
-        self.num_branch = cfg.MODEL.TRIDENT.NUM_BRANCH
-        self.trident_fast = cfg.MODEL.TRIDENT.TEST_BRANCH_IDX != -1
-
-    def forward(self, images, features, proposals, targets=None):
+    def _forward_box(
+            self, features: Dict[str, torch.Tensor], proposals: List[Instances]
+    ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
         """
-        See :class:`Res5ROIHeads.forward`.
+        Forward logic of the box prediction branch. If `self.train_on_pred_boxes is True`,
+            the function puts predicted boxes in the `proposal_boxes` field of `proposals` argument.
+
+        Args:
+            features (dict[str, Tensor]): mapping from feature map names to tensor.
+                Same as in :meth:`ROIHeads.forward`.
+            proposals (list[Instances]): the per-image object proposals with
+                their matching ground truth.
+                Each has fields "proposal_boxes", and "objectness_logits",
+                "gt_classes", "gt_boxes".
+
+        Returns:
+            In training, a dict of losses.
+            In inference, a list of `Instances`, the predicted instances.
         """
-        num_branch = self.num_branch if self.training or not self.trident_fast else 1
-        all_targets = targets * num_branch if targets is not None else None
-        pred_instances, losses = super().forward(images, features, proposals, all_targets)
-        del images, all_targets, targets
+        features = [features[f] for f in self.box_in_features]
+        box_features = self.box_pooler(features, [x.proposal_boxes for x in proposals])
+        if self.training:
+            predictions = self.box_predictor(box_features, gt_standards=cat([p.gt_standards for p in proposals], dim=0))
+        else:
+            predictions = self.box_predictor(box_features)
+
+        del box_features
 
         if self.training:
-            return pred_instances, losses
+            losses = self.box_predictor.losses(predictions, proposals)
+            # proposals is modified in-place below, so losses must be computed first.
+            if self.train_on_pred_boxes:
+                with torch.no_grad():
+                    pred_boxes = self.box_predictor.predict_boxes_for_gt_classes(
+                        predictions, proposals
+                    )
+                    for proposals_per_image, pred_boxes_per_image in zip(proposals, pred_boxes):
+                        proposals_per_image.proposal_boxes = Boxes(pred_boxes_per_image)
+            return losses
         else:
-            pred_instances = merge_branch_instances(
-                pred_instances,
-                num_branch,
-                self.box_predictor.test_nms_thresh,
-                self.box_predictor.test_topk_per_image,
-            )
+            pred_instances, _ = self.box_predictor.inference(predictions, proposals)
+            return pred_instances
 
-            return pred_instances, {}
+    @classmethod
+    def from_config(cls, cfg, input_shape):
+        ret = {}
+        std_num_classes = cfg.MODEL.ROI_HEADS.STD_NUM_CLS
+        ret['std_num_classes'] = std_num_classes
+        dic = super().from_config(cfg, input_shape)
+        ret.update(dic)
+        return ret
 
     @torch.no_grad()
     def label_and_sample_proposals(
@@ -140,6 +127,7 @@ class TridentRes5ROITripleHeads(Res5ROIHeads2):
             sampled_idxs, gt_classes, gt_standards = self._sample_proposals2(
                 matched_idxs, matched_labels, targets_per_image.gt_classes, targets_per_image.gt_standards
             )
+
             # Set target attributes of the sampled proposals:
             proposals_per_image = proposals_per_image[sampled_idxs]
             proposals_per_image.gt_classes = gt_classes
@@ -207,11 +195,11 @@ class TridentRes5ROITripleHeads(Res5ROIHeads2):
             gt_classes[matched_labels == -1] = -1
             # gt_standards不考虑背景这一类别
             gt_standards = gt_standards[matched_idxs]
-            gt_standards[matched_labels == 0] = -1
+            gt_standards[matched_labels == 0] = self.std_num_classes
             gt_standards[matched_labels == -1] = -1
         else:
             gt_classes = torch.zeros_like(matched_idxs) + self.num_classes
-            gt_standards = torch.zeros_like(matched_idxs) - 1
+            gt_standards = torch.zeros_like(matched_idxs) + self.std_num_classes
 
         sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
             gt_classes, self.batch_size_per_image, self.positive_fraction, self.num_classes

@@ -4,7 +4,6 @@ from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 
 import torch
-from torchvision.transforms import ToTensor
 import numpy as np
 
 
@@ -37,10 +36,9 @@ class MLablesDatasetMapper(DatasetMapper):
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
-        # dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        dataset_dict["image"] = ToTensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         if sem_seg_gt is not None:
-            dataset_dict["sem_seg"] = ToTensor(sem_seg_gt.astype("long"))
+            dataset_dict["sem_seg"] = torch.as_tensor(sem_seg_gt.astype("long"))
 
         # USER: Remove if you don't use pre-computed proposals.
         # Most users would not need this feature.

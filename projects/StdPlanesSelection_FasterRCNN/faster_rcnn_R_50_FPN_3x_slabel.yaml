@@ -1,0 +1,32 @@
+_BASE_: "/home/ultrasonic/detectron22/configs/Base-RCNN-FPN.yaml"
+INPUT:
+  MIN_SIZE_TEST: 800
+  MAX_SIZE_TEST: 960
+  MAX_SIZE_TRAIN: 960
+  MIN_SIZE_TRAIN: (800,)  # 是否要太小了，要不要改成960x(736,800)
+  MIN_SIZE_TRAIN_SAMPLING: "choice"  # @WillLee 固定使用choice，以固定输入大小
+DATASETS:
+  TRAIN: ('kuangtu6_train',)
+  TEST: ('kuangtu6_test',)
+MODEL:
+  PIXEL_MEAN: [44.52619347, 43.15665151, 42.63251777]
+  PIXEL_STD: [47.42477607, 46.13824758, 45.65620214]
+  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  MASK_ON: False
+  RESNETS:
+    DEPTH: 50
+  ANCHOR_GENERATOR:
+    SIZES: [[208, 240, 448, 560, 672]]
+  RPN:
+    IOU_THRESHOLDS: [0.3, 0.7]
+  ROI_HEADS:
+    NAME: "StandardROIHeads"
+    NUM_CLASSES: 12
+    IN_FEATURES: ["p2", "p3", "p4", "p5"]
+    BATCH_SIZE_PER_IMAGE: 128
+SOLVER:
+  BASE_LR: 0.001
+  STEPS: (210000, 250000)
+  MAX_ITER: 270000
+  IMS_PER_BATCH: 16
+  CHECKPOINT_PERIOD: 20000
